@@ -1,0 +1,5 @@
+#!/usr/bin/python
+
+import sys, yaml, json;
+
+print yaml.dump(json.load(sys.stdin), encoding='utf-8', default_style='', default_flow_style=False).replace('!!python/unicode ', '')

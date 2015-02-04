@@ -1,0 +1,57 @@
+#!/bin/bash
+
+set -o pipefail
+
+SCRIPT="`readlink -e $0`"
+SCRIPTPATH="`dirname $SCRIPT`"
+
+FILEARG="$1"
+USEAPI=true
+if [ "$1" = "-s" ]; then
+	USEAPI=false
+	FILEARG="$2"
+fi
+
+if [ "$FILEARG" = "" ] || [ ! -f "$FILEARG" ]; then
+	echo $0: "Specify a player.dat File" >&2
+	exit 1;
+fi
+
+NBT2YAML=`which nbt2yaml`
+if [ $? -ne 0 ]; then
+	if [ -f "/usr/local/bin/nbt2yaml" ]; then
+		NBT2YAML="/usr/local/bin/nbt2yaml"	
+	else
+		echo $0: "nbt2yaml wasn't found on path" >&2
+		exit 1;
+	fi
+fi
+
+if [ $USEAPI = true ]; then
+	if [ ! -f "$SCRIPTPATH/apiplayer2yaml" ]; then
+		echo $0: Cannot find "$SCRIPTPATH/apiplayer2yaml for API call.  Use -s to skip" >&2
+		exit 1;
+	fi
+
+	"$SCRIPTPATH/apiplayer2yaml" "$FILEARG"|grep -v '^#'
+	A=$?
+	if [ $A -ne 0 ]; then
+		echo $0: "non-zero error while getting api data from player.dat filename for API call. Use -s to skip" >&2
+		exit 1;
+	fi
+fi
+
+echo 'type: Player'
+
+"$NBT2YAML" "$FILEARG"|sed -E 's/^:/ /'|sed 's/\!/\!!/g'|sed -E 's/\!(long|short|byte)/\!int/g'|sed 's/\!double/\!float/g'|sed -E 's/\!list_[a-z]+/\!seq/g'|tail -n +3|sed -E 's/^  [- ] //'|grep -vE '^$'
+
+E=$?
+if [ $E -ne 0 ]; then
+	echo $0: Non-zero exit status in piped commands >&2
+	rm "$TEMPFILE"
+	exit $E;
+fi
+
+echo -n 'filetimestamp: !!int '
+stat -c %Y "$FILEARG"
+

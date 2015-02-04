@@ -1,0 +1,155 @@
+#!/usr/bin/env python
+"""
+Finds and prints counts of entities in game files.
+"""
+
+import argparse, os, sys, locale, fnmatch, re
+
+# local module
+try:
+	import nbt
+except ImportError:
+	# nbt not in search path. Let's see if it can be found in the parent folder
+	extrasearchpath = os.path.realpath(os.path.join(__file__,os.pardir,os.pardir))
+	if not os.path.exists(os.path.join(extrasearchpath,'nbt')):
+		raise
+	sys.path.append(extrasearchpath)
+from nbt.region import RegionFile
+
+class Position(object):
+	def __init__(self, x,y,z):
+		self.x = x
+		self.y = y
+		self.z = z
+
+def counts_per_chunk(chunk):
+	"""Given a chunk, find all entities (mobs, items, vehicles)"""
+	counts = {}
+
+	for entity in chunk['Entities']:
+		dimension = "Unknown Dimension %s" % entity["Dimension"] 
+		if (entity["Dimension"].value == 0):
+			dimension = "Overworld"
+		elif (entity["Dimension"].value == 1):
+			dimension = "End"
+		elif (entity["Dimension"].value == -1):
+			dimension = "Nether"
+
+		if (not dimension in counts):
+			counts[dimension] = {}
+		if (not entity['id'].value in counts[dimension]):	 
+			counts[dimension][entity['id'].value] = 1
+		else:
+			counts[dimension][entity['id'].value] += 1
+
+	return counts
+
+def get_results(filename, filetime, region, chunk, counts, limit):
+	output = "-\n"
+	output += "  x: %s to %s\n" % (chunk['Level']['xPos'], (chunk['Level']['xPos'].value + 16))
+	output += "  z: %s to %s\n" % (chunk['Level']['zPos'], (chunk['Level']['zPos'].value + 16))
+	output += "  filename: %s\n" % filename
+	output += "  filetimestamp: %s\n" % filetime
+	
+	total = 0
+	for dimension in counts:
+		output += "  %s:\n" % dimension
+		for etype in counts[dimension]:
+			total += counts[dimension][etype]
+			output += "	%s: %i\n" % (etype, counts[dimension][etype])
+
+	output += "  Entities: %i\n" % total
+
+	if (total > 0 and total >= limit):
+		return output
+
+	return ""
+
+def process_regions(files, refresh, noupdate, limit):
+	try:
+		for file in files:
+			if (not os.path.isfile(file)):
+				print "'%s' is not a file" % file
+				return "72" # EX_IO
+
+			filetime = os.path.getmtime(file) 
+
+			path, filename = os.path.split(file)
+
+			cachefile = path + '/counts-' + re.sub('.mca$', '', filename)+'.yaml'
+
+			cachetime = 0
+			if (os.path.exists(cachefile)):
+				cachetime = os.path.getmtime(cachefile)
+
+			output = ""
+
+			if (not refresh and cachetime >= filetime):
+				cached = open(cachefile, "r")
+				output = cached.read()
+				cached.close()
+			else:
+				region = RegionFile(file)
+
+				for chunk in region.iter_chunks():
+					output += get_results(path + '/' + filename, filetime, region, chunk, counts_per_chunk(chunk['Level']), limit)
+
+				if (not noupdate):
+					cached = open(cachefile, "w")
+					cached.write(output)
+					cached.close()
+
+			if (output != ""):
+				print re.sub('\n$', '', output)
+	except KeyboardInterrupt:
+		return 75 # EX_TEMPFAIL
+ 
+	return 0 # NOERR
+
+def process_world(dir, refresh, noupdate, limit):
+	files = []
+	for file in find_files(dir, '*.mca'):
+		files.append(file)
+
+	return process_regions(files, refresh, noupdate, limit)
+
+def find_files(directory, pattern):
+	for root, dirs, files in os.walk(directory):
+		for basename in files:
+			if fnmatch.fnmatch(basename, pattern):
+				filename = os.path.join(root, basename)
+				yield filename
+
+def main():
+	parser = argparse.ArgumentParser(description="This program prints counts of entities from MCA files.\nPrevious runs are cached into counts-$REGION.yaml", formatter_class=argparse.RawTextHelpFormatter)
+	parser.add_argument('-r', '--refresh', action='store_true', dest='refresh', help='Force refresh of cached lookups.', default=False)
+	parser.add_argument('-n', '--noupdate', action='store_true', dest='noupdate', help='Don\'t update cache files.', default=False)
+	parser.add_argument('-w', '--world', action='store', dest='dir', help='World Directory')
+	parser.add_argument('-l', '--limit', action='store', type=int, dest='limit', help='Only show chunks with more than this number of entities. Implies -r and -n', default=0)
+	parser.add_argument('file', nargs='*', help='*.mca File')
+
+	args = parser.parse_args()
+	
+	if (args.limit != 0):
+		args.refresh = True
+		args.noupdate = True
+
+	if (args.dir != None and len(args.file) > 0):
+		print "Cannot pass both a world and mca files\nSee --help for more"
+		sys.exit(64) # EX_USAGE
+	elif (args.dir == None and len(args.file) == 0):
+		print "Must provide either a world directory with -w or a list of mca files\nSee --help for more"
+		sys.exit(64) # EX_USAGE
+
+	if (args.dir != None):
+		if (not os.path.isdir(args.dir)):
+			print "'%s' is not a directory" % args.dir
+			sys.exit(72) # EX_IOERR
+		else:
+			sys.exit(process_world(args.dir, args.refresh, args.noupdate, args.limit))
+
+	sys.exit(process_regions(args.file, args.refresh, args.noupdate, args.limit))
+	
+
+if __name__ == '__main__':
+	main()

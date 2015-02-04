@@ -1,0 +1,33 @@
+#!/bin/bash
+
+set -o pipefail
+
+SCRIPT="`readlink -e $0`"
+SCRIPTPATH="`dirname $SCRIPT`"
+
+FILEARG="$1"
+
+if [ "$FILEARG" = "" ] || [ ! -f "$FILEARG" ]; then
+	echo $0: "Specify a player.dat File"
+	exit 1;
+fi
+
+PCREGREP=`which pcregrep`
+if [ $? -ne 0 ]; then
+	echo $0: "pcregrep wasn't found on path" >&2
+	exit 1;
+fi
+
+if [ ! -f "$SCRIPTPATH/player2yaml" ]; then
+	echo $0: Cannot find "$SCRIPTPATH/player2yaml" >&2
+	exit 1;
+fi
+
+"$SCRIPTPATH/player2yaml" "$FILEARG"|"$PCREGREP" -iM '^(.?id.?:.+$|.?name.?:.+$|type:.+$|Dimension:.+$|filetimestamp:.+$|XpLevel:.+$|Pos:.+\n-.+\n.+\n.+\n)'
+
+E=$?
+if [ $E -ne 0 ]; then
+	echo $0: Non-zero exit status in piped commands >&2
+	exit $E;
+fi
+

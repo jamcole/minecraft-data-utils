@@ -1,0 +1,34 @@
+#!/bin/bash
+
+set -o pipefail
+
+SCRIPT="`readlink -e $0`"
+SCRIPTPATH="`dirname $SCRIPT`"
+
+DIRARG="$1"
+
+if [ "$DIRARG" = "" ] || [ ! -d "$DIRARG" ]; then
+	echo $0: "Specify the directory of all player.dat files" >&2
+	exit 1;
+fi
+
+if [ ! -f "$SCRIPTPATH/allplayer2yaml" ]; then
+	echo $0: Cannot find "$SCRIPTPATH/allplayer2yaml" >&2
+	exit 1;
+fi
+
+
+if [ ! -f "$SCRIPTPATH/yaml2json" ]; then
+	echo $0: Cannot find "$SCRIPTPATH/yaml2json" >&2
+	exit 1;
+fi
+
+"$SCRIPTPATH/allplayer2yaml" "$DIRARG"|"$SCRIPTPATH/yaml2json"
+
+E=$?
+if [ $E -ne 0 ]; then
+	echo $0: Non-zero exit status in piped commands >&2
+	rm "$TEMPFILE"
+	exit $E;
+fi
+

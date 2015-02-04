@@ -1,0 +1,34 @@
+#!/bin/bash
+
+set -o pipefail
+
+SCRIPT="`readlink -e $0`"
+SCRIPTPATH="`dirname $SCRIPT`"
+
+FILEARG="$1"
+
+if [ "$FILEARG" = "" ] || [ ! -f "$FILEARG" ]; then
+	echo $0: "Specify a level.dat File" >&2
+	exit 1;
+fi
+
+if [ ! -f "$SCRIPTPATH/player2yaml" ]; then
+	echo $0: Cannot find "$SCRIPTPATH/player2yaml" >&2
+	exit 1;
+fi
+
+
+if [ ! -f "$SCRIPTPATH/yaml2json" ]; then
+	echo $0: Cannot find "$SCRIPTPATH/yaml2json" >&2
+	exit 1;
+fi
+
+"$SCRIPTPATH/level2yaml" "$FILEARG"|"$SCRIPTPATH/yaml2json"
+
+E=$?
+if [ $E -ne 0 ]; then
+	echo $0: Non-zero exit status in piped commands >&2
+	rm "$TEMPFILE"
+	exit $E;
+fi
+

@@ -1,0 +1,117 @@
+#!/bin/bash
+
+set -o pipefail
+
+MINUTES=1440
+
+APIURL=
+
+SCRIPT="`readlink -e $0`"
+SCRIPTPATH="`dirname $SCRIPT`"
+
+REFRESH=false;
+FILEARG="$1";
+if [ "$1" = "-r" ]; then
+	REFRESH=true;
+	FILEARG="$2";
+fi
+
+if [ "$FILEARG" = "" ] || [ ! -f "$FILEARG" ] ; then
+	echo $0: "Specify a player.dat File" >&2
+	exit 1;
+fi
+
+CURL=`which curl`
+if [ $? -ne 0 ]; then
+	echo $0: "curl wasn't found on path" >&2
+	exit 1;
+fi
+
+if [ ! -f "$SCRIPTPATH/json2yaml" ]; then
+	echo $0: Cannot find "$SCRIPTPATH/json2yaml" >&2
+	exit 1;
+fi
+
+PLAYERDAT="`readlink -e "$FILEARG"`"
+PLAYERDATPATH="`dirname $PLAYERDAT`"
+
+UUID=`echo -n $FILEARG|grep -Eo '[^/]+$'|cut -d '.' -f 1|sed 's/-//g'`;
+
+if [ ! -f "$PLAYERDATPATH/api-$UUID.yaml" ]; then
+	touch "$PLAYERDATPATH/api-$UUID.yaml"
+	if [ $? != 0 ]; then
+		echo $0: Unable to create file "$PLAYERDATPATH/api-$UUID.yaml" >&2
+		exit;
+	fi
+fi
+
+DATA=false
+if [ -f "$PLAYERDATPATH/api-$UUID.yaml" ] && [ -s "$PLAYERDATPATH/api-$UUID.yaml" ]; then
+	DATA=true
+fi
+
+if [ ! -w "$PLAYERDATPATH/api-$UUID.yaml" ]; then
+	if [ $DATA = true ]; then
+		echo $0: "$PLAYERDATPATH/api-$UUID.yaml" had data, but was not writable... Nonfatal. >&2
+		REFRESH=false
+	else
+		echo $0: "$PLAYERDATPATH/api-$UUID.yaml" is not writable >&2
+		exit 1;
+	fi
+fi
+
+if [ $REFRESH = false ] && [ $DATA = false ]; then
+	REFRESH=true
+fi
+
+if [ $REFRESH = false ]; then
+	FINDFILEMOD=`find "$PLAYERDATPATH/api-$UUID.yaml" -mmin -$MINUTES`
+	if [ "$FINDFILEMOD" = "" ]; then
+		REFRESH=true
+	fi
+fi
+
+if [ $REFRESH = true ]; then
+	TEMPFILE="`tempfile -m 0644`"
+	"$CURL" -LsSf "https://sessionserver.mojang.com/session/minecraft/profile/$UUID">"$TEMPFILE"
+	C=$?
+	if [ $C -ne 0 ]; then
+		if [ $DATA = false ]; then
+			echo $0: Received non-zero exit status of from curl >&2
+			echo $RESPONSE >&2
+			exit $C;
+		else
+			echo $0: Received exit status of $C from curl but already have data, so Nonfatal. >&2
+		fi
+	else
+		if [ ! -s "$TEMPFILE" ]; then
+			#echo $0: "Received empty response from api for $UUID" >&2
+			echo "'id': '$UUID'">>"$TEMPFILE"
+			echo "'name': ">>"$TEMPFILE"
+			cp "$TEMPFILE" "$PLAYERDATPATH/api-$UUID.yaml";
+		else
+			TEMPFILE2="`tempfile -m 0644`"
+			cat "$TEMPFILE"|"$SCRIPTPATH/json2yaml"|grep -vE '^ *$' > "$TEMPFILE2"
+			E=$?
+			if [ $E -ne 0 ]; then
+				if [ $DATA = false ]; then
+					echo $0: Received non-zero exit status from "$SCRIPTPATH/json2yaml" >&2
+					cat "$TEMPFILE" >&2
+					cat "$TEMPFILE2" >&2
+					exit $E;
+				else
+					echo $0: Received exit status of $C from "$SCRIPTPATH/json2yaml" but already have data, so Nonfatal. >&2
+					cat "$TEMPFILE" >&2
+					cat "$TEMPFILE2" >&2
+				fi
+				rm "$TEMPFILE2";
+			else 
+				mv "$TEMPFILE2" "$PLAYERDATPATH/api-$UUID.yaml";
+			fi
+		fi
+	fi
+	rm "$TEMPFILE"
+fi
+
+cat "$PLAYERDATPATH/api-$UUID.yaml"
+

@@ -1,0 +1,143 @@
+#!/usr/bin/env python
+"""
+Finds and prints custom  named entities in a game file.
+"""
+
+import argparse, os, sys, locale, fnmatch, re
+
+# local module
+try:
+	import nbt
+except ImportError:
+	# nbt not in search path. Let's see if it can be found in the parent folder
+	extrasearchpath = os.path.realpath(os.path.join(__file__,os.pardir,os.pardir))
+	if not os.path.exists(os.path.join(extrasearchpath,'nbt')):
+		raise
+	sys.path.append(extrasearchpath)
+from nbt.region import RegionFile
+
+class Position(object):
+	def __init__(self, x,y,z):
+		self.x = x
+		self.y = y
+		self.z = z
+
+class Entity(object):
+	def __init__(self, id, type, name, dimension, pos):
+		self.id	= id
+		self.type = type
+		self.name = name
+		self.dimension = dimension
+		self.pos = Position(*pos)
+
+
+def entities_per_chunk(chunk):
+	"""Given a chunk, find all entities (mobs, items, vehicles)"""
+	entities = []
+
+	for entity in chunk['Entities']:
+		customName = entity.get("CustomName")
+		if (customName != None):
+			x,y,z = entity["Pos"]
+			entities.append(Entity((entity["UUIDLeast"].value + entity["UUIDMost"].value), entity["id"].value, customName.value, entity["Dimension"], (x.value,y.value,z.value)))
+	
+	return entities
+
+
+def get_results(entities, filetime):
+	output = ""
+	for entity in entities:
+		output += "-\n"
+		output += "  id: %s\n" % entity.id
+		output += "  name: %s\n" % entity.name
+		output += "  type: %s\n" % entity.type
+		output += "  Dimension: !!int %s\n" % entity.dimension
+		output += "  Pos: !!seq\n"
+		output += "	- !!float %s\n" % locale.format("%0.1f",entity.pos.x,grouping=False)
+		output += "	- !!float %s\n" % locale.format("%0.1f",entity.pos.y,grouping=False)
+		output += "	- !!float %s\n" % locale.format("%0.1f",entity.pos.z,grouping=False)
+		output += "  filetimestamp: %s\n" % filetime
+
+	return output
+
+def process_regions(files, refresh):
+	try:
+		for file in files:
+			if (not os.path.isfile(file)):
+				print "'%s' is not a file" % file
+				return "72" # EX_IO
+
+			filetime = os.path.getmtime(file) 
+
+			path, filename = os.path.split(file)
+
+			cachefile = path + '/named-' + re.sub('.mca$', '', filename)+'.yaml'
+
+			cachetime = 0
+			if (os.path.exists(cachefile)):
+				cachetime = os.path.getmtime(cachefile)
+
+			output = ""
+
+			if (not refresh and cachetime >= filetime):
+				cached = open(cachefile, "r")
+				output = cached.read()
+				cached.close()
+			else:
+				region = RegionFile(file)
+
+				for chunk in region.iter_chunks():
+					output += get_results(entities_per_chunk(chunk["Level"]), filetime)
+
+				cached = open(cachefile, "w")
+				cached.write(output)
+				cached.close()
+
+			if (output != ""):
+				print re.sub('\n$', '', output)
+	except KeyboardInterrupt:
+		return 75 # EX_TEMPFAIL
+ 
+	return 0 # NOERR
+
+def process_world(dir, refresh):
+	files = []
+	for file in find_files(dir, '*.mca'):
+		files.append(file)
+
+	return process_regions(files, refresh)
+
+def find_files(directory, pattern):
+	for root, dirs, files in os.walk(directory):
+		for basename in files:
+			if fnmatch.fnmatch(basename, pattern):
+				filename = os.path.join(root, basename)
+				yield filename
+
+def main():
+	parser = argparse.ArgumentParser(description="This program prints custom named entities from MCA files.\nPrevious runs are cached into named-$REGION.yaml", formatter_class=argparse.RawTextHelpFormatter)
+	parser.add_argument('-r', '--refresh', action='store_true', dest='refresh', help='Force refresh of cached lookups.', default=False)
+	parser.add_argument('-w', '--world', action='store', dest='dir', help='World Directory')
+	parser.add_argument('file', nargs='*', help='*.mca File')
+
+	args = parser.parse_args()
+	  
+	if (args.dir != None and len(args.file) > 0):
+		print "Cannot pass both a world and mca files\nSee --help for more"
+		sys.exit(64) # EX_USAGE
+	elif (args.dir == None and len(args.file) == 0):
+		print "Must provide either a world directory with -w or a list of mca files\nSee --help for more"
+		sys.exit(64) # EX_USAGE
+
+	if (args.dir != None):
+		if (not os.path.isdir(args.dir)):
+			print "'%s' is not a directory" % args.dir
+			sys.exit(72) # EX_IOERR
+		else:
+			sys.exit(process_world(args.dir, args.refresh))
+
+	sys.exit(process_regions(args.file, args.refresh))
+	
+
+if __name__ == '__main__':
+	main()
