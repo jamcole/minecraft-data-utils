@@ -37,7 +37,7 @@ def counts_per_chunk(chunk):
 
 		if (not dimension in counts):
 			counts[dimension] = {}
-		if (not entity['id'].value in counts[dimension]):	 
+		if (not entity['id'].value in counts[dimension]): 
 			counts[dimension][entity['id'].value] = 1
 		else:
 			counts[dimension][entity['id'].value] += 1
@@ -56,7 +56,7 @@ def get_results(filename, filetime, region, chunk, counts, limit):
 		output += "  %s:\n" % dimension
 		for etype in counts[dimension]:
 			total += counts[dimension][etype]
-			output += "	%s: %i\n" % (etype, counts[dimension][etype])
+			output += "    %s: %i\n" % (etype, counts[dimension][etype])
 
 	output += "  Entities: %i\n" % total
 

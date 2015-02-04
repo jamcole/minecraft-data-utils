@@ -53,9 +53,9 @@ def get_results(entities, filetime):
 		output += "  type: %s\n" % entity.type
 		output += "  Dimension: !!int %s\n" % entity.dimension
 		output += "  Pos: !!seq\n"
-		output += "	- !!float %s\n" % locale.format("%0.1f",entity.pos.x,grouping=False)
-		output += "	- !!float %s\n" % locale.format("%0.1f",entity.pos.y,grouping=False)
-		output += "	- !!float %s\n" % locale.format("%0.1f",entity.pos.z,grouping=False)
+		output += "    - !!float %s\n" % locale.format("%0.1f",entity.pos.x,grouping=False)
+		output += "    - !!float %s\n" % locale.format("%0.1f",entity.pos.y,grouping=False)
+		output += "    - !!float %s\n" % locale.format("%0.1f",entity.pos.z,grouping=False)
 		output += "  filetimestamp: %s\n" % filetime
 
 	return output
